@@ -3,14 +3,7 @@ import argparse
 from pathlib import Path
 from typing_extensions import List
 import math
-
-
-@dataclass
-class WakFile:
-    start: int
-    size: int
-    name: str
-    content: bytes
+import os
 
 
 @dataclass
@@ -90,24 +83,43 @@ def prettify_bytes(num: int) -> str:
     return f"{num_str}{prefixes[category]}"
 
 
-def parse_wak(wak: Path, verbose: bool):
+@dataclass
+class File:
+    path: str
+    content: bytes
+
+
+def parse_wak(wak: Path, verbose: bool) -> List[File]:
     reader = Reader(data=open(wak, "rb").read())
     reader.assertion(b"\0\0\0\0", "empty start")
     file_count = reader.read_le(4)
     first_file = reader.read_le(4)
     reader.assertion(b"\0\0\0\0", "header end")
-    files: List[WakFile] = []
 
     def display(name: str, addr: str, size: str):
         if verbose:
             print(f"{name:<70} {addr:<15} {size}")
 
     display("Path", "Address", "Size")
+
+    files: List[File] = []
+
     for _ in range(file_count):
         addr = reader.read_le(4)
         size = reader.read_le(4)
-        name = reader.read_str(4)
-        display(name, hex(addr), prettify_bytes(size))
+        path = reader.read_str(4)
+        content = reader.bytes_at(addr, size)
+        files.append(File(path, content))
+        display(path, hex(addr), prettify_bytes(size))
+
+    return files
 
 
-parse_wak(args.wak, args.verbose)
+if args.compress:
+    pass
+else:
+    files = parse_wak(args.wak, args.verbose)
+    for file in files:
+        path = args.dir / file.path
+        os.makedirs(path.parent, exist_ok=True)
+        open(path, "wb").write(file.content)
