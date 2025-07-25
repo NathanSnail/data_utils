@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 import argparse
 from pathlib import Path
+from typing import Callable
 from typing_extensions import List
 import math
 import os
+from itertools import chain
+from functools import cmp_to_key
 
 
 @dataclass
@@ -91,7 +94,7 @@ class File:
 
 def parse_wak(wak: Path, verbose: bool) -> List[File]:
     reader = Reader(data=open(wak, "rb").read())
-    reader.assertion(b"\0\0\0\0", "empty start")
+    reader.assertion(b"\0\0\0\0", "header start")
     file_count = reader.read_le(4)
     first_file = reader.read_le(4)
     reader.assertion(b"\0\0\0\0", "header end")
@@ -115,8 +118,49 @@ def parse_wak(wak: Path, verbose: bool) -> List[File]:
     return files
 
 
+def cmp_to_cmp[T](fn: Callable[[T, T], bool]) -> Callable[[T, T], int]:
+    return lambda a, b: -1 if fn(a, b) else (1 if fn(b, a) else 0)
+
+
+def dir_to_files(dir: Path, verbose: bool) -> List[File]:
+
+    def path_cmp(a: Path, b: Path) -> bool:
+        def parents_metric(p: Path) -> int:
+            return len(p.parents)
+
+        if parents_metric(a) > parents_metric(b):
+            return True
+        if parents_metric(b) > parents_metric(a):
+            return False
+        return a < b
+
+    def impl(root: Path, dir: Path, verbose: bool) -> List[File]:
+        return list(
+            chain.from_iterable(
+                [
+                    (
+                        impl(root, x, verbose)
+                        if x.is_dir()
+                        else [
+                            File(
+                                str(x.relative_to(root)),
+                                b"" if True else open(x, "rb").read(),
+                            )
+                        ]
+                    )
+                    for x in sorted(
+                        (dir / y for y in os.listdir(dir)),
+                        key=cmp_to_key(cmp_to_cmp(path_cmp)),
+                    )
+                ]
+            )
+        )
+
+    return impl(dir, dir, verbose)
+
+
 if args.compress:
-    pass
+    print(dir_to_files(Path("test"), False))
 else:
     files = parse_wak(args.wak, args.verbose)
     for file in files:
