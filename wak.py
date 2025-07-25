@@ -8,6 +8,9 @@ import os
 from itertools import chain
 from functools import cmp_to_key
 
+NAME_LEN = 70
+ADDR_LEN = 15
+
 
 @dataclass
 class Reader:
@@ -32,6 +35,21 @@ class Reader:
 
     def assertion(self, data: bytes, reason: str):
         assert self.read_bytes(len(data)) == data, reason
+
+
+@dataclass
+class Writer:
+    data: bytes = b""
+
+    def write_le(self, value: int, length: int):
+        self.write_bytes(value.to_bytes(length))
+
+    def write_str(self, string: bytes, length_count: int):
+        self.write_le(len(string), length_count)
+        self.write_bytes(string)
+
+    def write_bytes(self, data: bytes):
+        self.data += data
 
 
 parser = argparse.ArgumentParser(
@@ -101,7 +119,7 @@ def parse_wak(wak: Path, verbose: bool) -> List[File]:
 
     def display(name: str, addr: str, size: str):
         if verbose:
-            print(f"{name:<70} {addr:<15} {size}")
+            print(f"{name:<{NAME_LEN}} {addr:<{ADDR_LEN}} {size}")
 
     display("Path", "Address", "Size")
 
@@ -141,7 +159,7 @@ def dir_to_files(dir: Path, verbose: bool) -> List[File]:
                         else [
                             File(
                                 str(x.relative_to(root)),
-                                b"" if True else open(x, "rb").read(),
+                                open(x, "rb").read(),
                             )
                         ]
                     )
@@ -156,8 +174,28 @@ def dir_to_files(dir: Path, verbose: bool) -> List[File]:
     return impl(dir, dir, verbose)
 
 
+def save_wak(wak: Path, files: List[File], verbose: bool):
+    writer = Writer()
+    if args.verbose:
+        for file in files:
+            print(f"{file.path:<{NAME_LEN}} {prettify_bytes(len(file.content))}")
+
+    # addr + size + len
+    start_offset = sum(12 + len(file.path) for file in files)
+    if verbose:
+        print(hex(start_offset))
+
+    writer.write_bytes(b"\0\0\0\0")
+    writer.write_le(len(files), 4)
+    writer.write_le(len(files), 4)
+    writer.write_bytes(b"\0\0\0\0")
+
+    open(wak, "wb").write(writer.data)
+
+
 if args.compress:
-    print(dir_to_files(Path("test"), False))
+    files = dir_to_files(args.dir, args.verbose)
+    save_wak(args.wak, files, args.verbose)
 else:
     files = parse_wak(args.wak, args.verbose)
     for file in files:
