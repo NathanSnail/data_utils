@@ -125,13 +125,10 @@ def cmp_to_cmp[T](fn: Callable[[T, T], bool]) -> Callable[[T, T], int]:
 def dir_to_files(dir: Path, verbose: bool) -> List[File]:
 
     def path_cmp(a: Path, b: Path) -> bool:
-        def parents_metric(p: Path) -> int:
-            return len(p.parents)
-
-        if parents_metric(a) > parents_metric(b):
-            return True
-        if parents_metric(b) > parents_metric(a):
+        if a.is_dir() and not b.is_dir():
             return False
+        if b.is_dir() and not a.is_dir():
+            return True
         return a < b
 
     def impl(root: Path, dir: Path, verbose: bool) -> List[File]:
