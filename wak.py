@@ -1,7 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import argparse
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from typing_extensions import List
 import math
 import os
@@ -14,7 +14,7 @@ ADDR_LEN = 15
 
 @dataclass
 class Reader:
-    data: bytes
+    data: bytearray
     ptr: int = 0
 
     def read_le(self, count: int) -> int:
@@ -25,31 +25,38 @@ class Reader:
         raw_string = self.read_bytes(length)
         return raw_string.decode("utf-8")
 
-    def read_bytes(self, count: int) -> bytes:
+    def read_bytes(self, count: int) -> bytearray:
         val = self.data[self.ptr : self.ptr + count]
         self.ptr += count
         return val
 
-    def bytes_at(self, addr: int, count: int) -> bytes:
+    def bytes_at(self, addr: int, count: int) -> bytearray:
         return self.data[addr : addr + count]
 
     def assertion(self, data: bytes, reason: str):
         assert self.read_bytes(len(data)) == data, reason
 
 
+def fmap[T, U](f: Callable[[T], U], opt: Optional[T]) -> Optional[U]:
+    return f(opt) if opt is not None else None
+
+
 @dataclass
 class Writer:
-    data: bytes = b""
+    data: bytearray = field(default_factory=lambda: bytearray(b""))
 
-    def write_le(self, value: int, length: int):
-        self.write_bytes(value.to_bytes(length))
+    def write_le(self, value: int, length: int, at: Optional[int] = None):
+        self.write_bytes(value.to_bytes(length, byteorder="little"), at)
 
-    def write_str(self, string: bytes, length_count: int):
-        self.write_le(len(string), length_count)
-        self.write_bytes(string)
+    def write_str(self, string: bytes, length_count: int, at: Optional[int] = None):
+        self.write_le(len(string), length_count, at)
+        self.write_bytes(string, fmap(lambda x: x + 4, at))
 
-    def write_bytes(self, data: bytes):
-        self.data += data
+    def write_bytes(self, data: bytes, at: Optional[int] = None):
+        if at == None:
+            self.data += data
+        else:
+            self.data[at : len(data) + at] = data
 
 
 parser = argparse.ArgumentParser(
@@ -111,7 +118,7 @@ class File:
 
 
 def parse_wak(wak: Path, verbose: bool) -> List[File]:
-    reader = Reader(data=open(wak, "rb").read())
+    reader = Reader(data=bytearray(open(wak, "rb").read()))
     reader.assertion(b"\0\0\0\0", "header start")
     file_count = reader.read_le(4)
     first_file = reader.read_le(4)
@@ -130,7 +137,7 @@ def parse_wak(wak: Path, verbose: bool) -> List[File]:
         size = reader.read_le(4)
         path = reader.read_str(4)
         content = reader.bytes_at(addr, size)
-        files.append(File(path, content))
+        files.append(File(path, bytes(content)))
         display(path, hex(addr), prettify_bytes(size))
 
     return files
@@ -174,21 +181,38 @@ def dir_to_files(dir: Path, verbose: bool) -> List[File]:
     return impl(dir, dir, verbose)
 
 
+def write_file_header(writer: Writer, start: int, file: File, verbose: bool):
+    writer.write_le(start, 4)
+    writer.write_le(len(file.content), 4)
+    writer.write_str(file.path.encode(), 4)
+
+
+def write_file_content(writer: Writer, file: File, verbose: bool):
+    writer.write_bytes(file.content)
+    writer.write_bytes(b"\0")
+
+
 def save_wak(wak: Path, files: List[File], verbose: bool):
     writer = Writer()
     if args.verbose:
         for file in files:
             print(f"{file.path:<{NAME_LEN}} {prettify_bytes(len(file.content))}")
 
-    # addr + size + len
-    start_offset = sum(12 + len(file.path) for file in files)
+    # (header start + n files + first addr + header end) + addr + size + len
+    start_offset = 16 + sum(12 + len(file.path) for file in files)
     if verbose:
         print(hex(start_offset))
 
     writer.write_bytes(b"\0\0\0\0")
     writer.write_le(len(files), 4)
-    writer.write_le(len(files), 4)
+    writer.write_le(start_offset, 4)
     writer.write_bytes(b"\0\0\0\0")
+
+    for file in files:
+        write_file_header(writer, start_offset, file, verbose)
+        start_offset += len(file.content) + 1
+    for file in files:
+        write_file_content(writer, file, verbose)
 
     open(wak, "wb").write(writer.data)
 
