@@ -147,6 +147,18 @@ def cmp_to_cmp[T](fn: Callable[[T, T], bool]) -> Callable[[T, T], int]:
     return lambda a, b: -1 if fn(a, b) else (1 if fn(b, a) else 0)
 
 
+def str_gt(a: str, b: str) -> bool:
+    if len(a) == 0 or len(b) == 0:
+        return a > b
+    if a[0] == "_" and b[0] != "_":
+        return True
+    if a[0] != "_" and b[0] == "_":
+        return False
+    if a[0] == b[0]:
+        return str_gt(a[1:], b[1:])
+    return a > b
+
+
 def dir_to_files(dir: Path, verbose: bool) -> List[File]:
 
     def path_cmp(a: Path, b: Path) -> bool:
@@ -154,7 +166,7 @@ def dir_to_files(dir: Path, verbose: bool) -> List[File]:
             return False
         if b.is_dir() and not a.is_dir():
             return True
-        return a < b
+        return str_gt(str(b), str(a))
 
     def impl(root: Path, dir: Path, verbose: bool) -> List[File]:
         return list(
