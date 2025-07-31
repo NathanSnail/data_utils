@@ -136,10 +136,6 @@ def parse_wak(wak: Path, verbose: bool) -> List[File]:
         addr = reader.read_le(4)
         size = reader.read_le(4)
         path = reader.read_str(4)
-        print(path)
-        if path == "data/biome_impl/caves/generated/cave_362.png":
-            print(hex(addr), size)
-            print("HI")
         content = reader.bytes_at(addr, size)
         files.append(File(path, bytes(content)))
         display(path, hex(addr), prettify_bytes(size))
