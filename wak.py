@@ -48,9 +48,9 @@ class Writer:
     def write_le(self, value: int, length: int, at: Optional[int] = None):
         self.write_bytes(value.to_bytes(length, byteorder="little"), at)
 
-    def write_str(self, string: bytes, length_count: int, at: Optional[int] = None):
+    def write_str(self, string: str, length_count: int, at: Optional[int] = None):
         self.write_le(len(string), length_count, at)
-        self.write_bytes(string, fmap(lambda x: x + 4, at))
+        self.write_bytes(string.encode(), fmap(lambda x: x + 4, at))
 
     def write_bytes(self, data: bytes, at: Optional[int] = None):
         if at == None:
@@ -136,6 +136,10 @@ def parse_wak(wak: Path, verbose: bool) -> List[File]:
         addr = reader.read_le(4)
         size = reader.read_le(4)
         path = reader.read_str(4)
+        print(path)
+        if path == "data/biome_impl/caves/generated/cave_362.png":
+            print(hex(addr), size)
+            print("HI")
         content = reader.bytes_at(addr, size)
         files.append(File(path, bytes(content)))
         display(path, hex(addr), prettify_bytes(size))
@@ -196,7 +200,7 @@ def dir_to_files(dir: Path, verbose: bool) -> List[File]:
 def write_file_header(writer: Writer, start: int, file: File, verbose: bool):
     writer.write_le(start, 4)
     writer.write_le(len(file.content), 4)
-    writer.write_str(file.path.encode(), 4)
+    writer.write_str(file.path, 4)
 
 
 def write_file_content(writer: Writer, file: File, verbose: bool):
